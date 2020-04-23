@@ -11,14 +11,19 @@ using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Navigation;
 using UWPSwapChainPanel;
+using Microsoft.Gaming.XboxGameBar;
+using SwapChainPanel;
 
 namespace UWPSwapChainPanel
 {
+
     /// <summary>
     /// Provides application-specific behavior to supplement the default Application class.
     /// </summary>
     sealed partial class App : Application
     {
+        private XboxGameBarWidget widget1 = null;
+
         /// <summary>
         /// Initializes the singleton Application object.  This is the first line of authored code
         /// executed, and as such is the logical equivalent of main() or WinMain().
@@ -75,13 +80,125 @@ namespace UWPSwapChainPanel
                 // indicating an alternate launch (e.g.: via toast or secondary tile), 
                 // navigate to the appropriate page, configuring the new page by passing required 
                 // information as a navigation parameter
-                if (!rootFrame.Navigate(typeof(MainPage), args.Arguments))
+                //if (!rootFrame.Navigate(typeof(MainPage), args.Arguments))
+                if (!rootFrame.Navigate(typeof(Widget), args.Arguments))
                 {
                     throw new Exception("Failed to create initial page");
                 }
             }
             // Ensure the current window is active
             Window.Current.Activate();
+        }
+
+
+        protected override void OnActivated(IActivatedEventArgs args)
+        {
+            XboxGameBarWidgetActivatedEventArgs widgetArgs = null;
+            if (args.Kind == ActivationKind.Protocol)
+            {
+                var protocolArgs = args as IProtocolActivatedEventArgs;
+                string scheme = protocolArgs.Uri.Scheme;
+                if (scheme.Equals("ms-gamebarwidget"))
+                {
+                    widgetArgs = args as XboxGameBarWidgetActivatedEventArgs;
+                }
+            }
+            if (widgetArgs != null)
+            {
+                //
+                // Activation Notes:
+                //
+                //    If IsLaunchActivation is true, this is Game Bar launching a new instance
+                // of our widget. This means we have a NEW CoreWindow with corresponding UI
+                // dispatcher, and we MUST create and hold onto a new XboxGameBarWidget.
+                //
+                // Otherwise this is a subsequent activation coming from Game Bar. We MUST
+                // continue to hold the XboxGameBarWidget created during initial activation
+                // and ignore this repeat activation, or just observe the URI command here and act 
+                // accordingly.  It is ok to perform a navigate on the root frame to switch 
+                // views/pages if needed.  Game Bar lets us control the URI for sending widget to
+                // widget commands or receiving a command from another non-widget process. 
+                //
+                // Important Cleanup Notes:
+                //    When our widget is closed--by Game Bar or us calling XboxGameBarWidget.Close()-,
+                // the CoreWindow will get a closed event.  We can register for Window.Closed
+                // event to know when our partucular widget has shutdown, and cleanup accordingly.
+                //
+                // NOTE: If a widget's CoreWindow is the LAST CoreWindow being closed for the process
+                // then we won't get the Window.Closed event.  However, we will get the OnSuspending
+                // call and can use that for cleanup.
+                //
+                if (widgetArgs.IsLaunchActivation)
+                {
+                    var rootFrame = new Frame();
+                    rootFrame.NavigationFailed += OnNavigationFailed;
+                    Window.Current.Content = rootFrame;
+
+                    // Navigate to correct view
+                    if (widgetArgs.AppExtensionId == "Widget1")
+                    {
+                        widget1 = new XboxGameBarWidget(
+                            widgetArgs,
+                            Window.Current.CoreWindow,
+                            rootFrame);
+                        rootFrame.Navigate(typeof(Widget), widget1);
+
+                        Window.Current.Closed += Widget1Window_Closed;
+                    }
+                    //else if (widgetArgs.AppExtensionId == "Widget1Settings")
+                    //{
+                    //    widget1Settings = new XboxGameBarWidget(
+                    //        widgetArgs,
+                    //        Window.Current.CoreWindow,
+                    //        rootFrame);
+                    //    rootFrame.Navigate(typeof(Widget1Settings));
+
+                    //    Window.Current.Closed += Widget1SettingsWindow_Closed;
+                    //}
+                    //else if (widgetArgs.AppExtensionId == "Widget2")
+                    //{
+                    //    widget2 = new XboxGameBarWidget(
+                    //        widgetArgs,
+                    //        Window.Current.CoreWindow,
+                    //        rootFrame);
+                    //    rootFrame.Navigate(typeof(Widget2), widgetArgs.Uri);
+
+                    //    Window.Current.Closed += Widget2Window_Closed;
+                    //}
+                    else
+                    {
+                        // Unknown - Game Bar should never send you an unknown App Extension Id
+                        return;
+                    }
+
+                    Window.Current.Activate();
+                }
+                //else if (widgetArgs.AppExtensionId == "Widget2")
+                //{
+                //    // You can perform whatever behavior you need based on the URI payload. In our case
+                //    // we're simply renavigating to Widget2 and displaying the absolute URI.  You
+                //    // define your URI schema (subpath + query + fragment). 
+                //    Frame rootFrame = null;
+                //    var content = Window.Current.Content;
+                //    if (content != null)
+                //    {
+                //        rootFrame = content as Frame;
+                //    }
+                //    rootFrame.NavigationFailed += OnNavigationFailed;
+                //    rootFrame.Navigate(typeof(Widget2), widgetArgs.Uri);
+                //}
+            }
+        }
+
+        private void Widget1Window_Closed(object sender, Windows.UI.Core.CoreWindowEventArgs e)
+        {
+            widget1 = null;
+            Window.Current.Closed -= Widget1Window_Closed;
+        }
+
+        void OnNavigationFailed(object sender, NavigationFailedEventArgs e)
+        {
+            throw new Exception("Failed to load Page " + e.SourcePageType.FullName);
         }
 
         /// <summary>
